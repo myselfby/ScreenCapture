@@ -318,10 +318,12 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 		if (lpScreenBitmap)
 		{
 			delete[] lpScreenBitmap;
+			lpScreenBitmap = nullptr;
 		}
 		if (lpCropBitmap)
 		{
 			delete[] lpCropBitmap;
+			lpCropBitmap = nullptr;
 		}
 		//PostQuitMessage(0);
 		break;
