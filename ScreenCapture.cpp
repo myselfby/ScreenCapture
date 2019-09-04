@@ -122,7 +122,7 @@ bool CaptureScreenBitmap()
 	if (BitBlt(hdcMemDC, 0, 0, screenWidth, screenHeight, hdcScreen, 0, 0, SRCCOPY))
 	{
 		GetDIBits(hdcMemDC, hbmScreen, 0, screenHeight, lpScreenBitmap, &bi, DIB_RGB_COLORS);
-		for (int i = 0; i < bmpSize; i++)
+		for (DWORD i = 0; i < bmpSize; i++)
 		{
 			lpCropBitmap[i] = lpScreenBitmap[i] / 2;
 		}
@@ -314,8 +314,18 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 		break;
 	}
 	case WM_DESTROY:
+	{
+		if (lpScreenBitmap)
+		{
+			delete[] lpScreenBitmap;
+		}
+		if (lpCropBitmap)
+		{
+			delete[] lpCropBitmap;
+		}
 		//PostQuitMessage(0);
 		break;
+	}
 	default:
 		return DefWindowProc(hWnd, message, wParam, lParam);
 	}
