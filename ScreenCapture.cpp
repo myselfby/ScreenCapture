@@ -136,14 +136,25 @@ bool CaptureScreenBitmap()
 
 HWND CreateCropWindow(HINSTANCE hInstance)
 {
+	bool bAllwaysTopmost = false;	//确保你能控制得住再启用bAllwaysTopmost
 	CaptureScreenBitmap();
+
+	DWORD dwExStyle = WS_EX_TOOLWINDOW;//不显示在任务栏中
+	if (bAllwaysTopmost)
+	{
+		dwExStyle |= WS_EX_TOPMOST;//始终处于最顶层
+	}
+	HWND hWnd = CreateWindowExW(dwExStyle, lpWindowClass, lpTitle, WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_POPUP,
+		0, 0, screenWidth, screenHeight, nullptr, nullptr, hInstance, nullptr);
 	//HWND hWnd = CreateWindowW(lpWindowClass, lpTitle, WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_POPUP,
 	//	0, 0, screenWidth, screenHeight, nullptr, nullptr, hInstance, nullptr);
-	HWND hWnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, lpWindowClass, lpTitle, WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_POPUP,
-		0, 0, screenWidth, screenHeight, nullptr, nullptr, hInstance, nullptr);
+	//if(hWnd)::SetWindowPos(hWnd, HWND_TOPMOST,0,0,screenWidth,screenHeight, SWP_NOMOVE | SWP_NOSIZE);
 	if (hWnd)
 	{
-		//::SetWindowPos(hWnd, HWND_TOPMOST,0,0,screenWidth,screenHeight, SWP_NOMOVE | SWP_NOSIZE);
+		if (!bAllwaysTopmost)
+		{
+			BringWindowToTop(hWnd);//第一次置于顶层
+		}
 		ShowWindow(hWnd, SW_SHOW);
 		UpdateWindow(hWnd);
 	}
