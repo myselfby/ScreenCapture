@@ -13,6 +13,8 @@ bool CaptureScreenBitmap();
 HWND CreateCropWindow(HINSTANCE hInstance);
 void TileBitmapToWindow(HDC hDC);
 bool SaveBitmap(const unsigned char* data, int width, int height, DWORD size, const char* filename);
+void SaveCropRectImage();
+void OnDragCropRect(int xPos, int yPos);
 
 unsigned char* lpScreenBitmap = nullptr;
 int screenWidth = 0;
@@ -212,6 +214,71 @@ bool SaveBitmap(const unsigned char* data, int width, int height,DWORD size, con
 	return true;
 }
 
+void SaveCropRectImage()
+{
+	int left = min(cropRect.left, cropRect.right);
+	int right = max(cropRect.left, cropRect.right);
+	int top = min(cropRect.top, cropRect.bottom);
+	int bottom = max(cropRect.top, cropRect.bottom);
+	int width = right - left + 1;
+	int height = bottom - top + 1;
+	if (width > 0 && height > 0)
+	{
+		int saveLineBytes = ((width * 24 + 31) / 32) * 4;//每行字节数必须是4字节的整数倍
+		int screenLineBytes = screenWidth * 3;
+		int size = saveLineBytes * height;
+		unsigned char* cropData = new unsigned char[size];
+		for (int y = 0; y < height; y++)
+		{
+			int destIndex = y * saveLineBytes;
+			int srcIndex = (screenHeight - bottom - 1 + y) * screenLineBytes + left * 3;
+			memcpy(&cropData[destIndex], &lpScreenBitmap[srcIndex], saveLineBytes);
+		}
+		time_t seconds = time(0);
+		int s = seconds % 60;
+		int m = (seconds % 3600) / 60;
+		int h = (seconds % (3600 * 24)) / 3600 + 8;
+		char timeBuf[128] = { 0 };
+		sprintf_s(timeBuf, 128, "capture-%02d-%02d-%02d.bmp", h, m, s);
+
+		SaveBitmap(cropData, width, height, size, timeBuf);
+		delete[] cropData;
+	}
+}
+
+void OnDragCropRect(int xPos,int yPos)
+{
+	int minRow = min(cropRect.top, cropRect.bottom);
+	int maxRow = max(cropRect.top, cropRect.bottom);
+	int minCol = min(cropRect.left, cropRect.right);
+	int maxCol = max(cropRect.left, cropRect.right);
+	for (int y = minRow; y <= maxRow; y++)
+	{
+		for (int x = minCol; x <= maxCol; x++)
+		{
+			int index = (screenHeight - y - 1) * screenWidth * 3 + x * 3;
+			lpCropBitmap[index] = lpScreenBitmap[index] / 2;
+			lpCropBitmap[index + 1] = lpScreenBitmap[index + 1] / 2;
+			lpCropBitmap[index + 2] = lpScreenBitmap[index + 2] / 2;
+		}
+	}
+	cropRect.right = xPos;
+	cropRect.bottom = yPos;
+	minRow = min(cropRect.top, cropRect.bottom);
+	maxRow = max(cropRect.top, cropRect.bottom);
+	minCol = min(cropRect.left, cropRect.right);
+	maxCol = max(cropRect.left, cropRect.right);
+	for (int y = minRow; y <= maxRow; y++)
+	{
+		for (int x = minCol; x <= maxCol; x++)
+		{
+			int index = (screenHeight - y - 1) * screenWidth * 3 + x * 3;
+			lpCropBitmap[index] = lpScreenBitmap[index];
+			lpCropBitmap[index + 1] = lpScreenBitmap[index + 1];
+			lpCropBitmap[index + 2] = lpScreenBitmap[index + 2];
+		}
+	}
+}
 LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	static bool bLeftMouseButtomDown = false;
@@ -241,36 +308,7 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	{
 		if (bLeftMouseButtomDown)
 		{
-			int minRow = min(cropRect.top, cropRect.bottom);
-			int maxRow = max(cropRect.top, cropRect.bottom);
-			int minCol = min(cropRect.left, cropRect.right);
-			int maxCol = max(cropRect.left, cropRect.right);
-			for (int y = minRow; y < maxRow; y++)
-			{
-				for (int x = minCol; x < maxCol; x++)
-				{
-					int index = (screenHeight - y - 1) * screenWidth * 3 + x * 3;
-					lpCropBitmap[index] = lpScreenBitmap[index]/2;
-					lpCropBitmap[index + 1] = lpScreenBitmap[index + 1]/2;
-					lpCropBitmap[index + 2] = lpScreenBitmap[index + 2]/2;
-				}
-			}
-			cropRect.right = LOWORD(lParam);
-			cropRect.bottom = HIWORD(lParam);
-			minRow = min(cropRect.top, cropRect.bottom);
-			maxRow = max(cropRect.top, cropRect.bottom);
-			minCol = min(cropRect.left, cropRect.right);
-			maxCol = max(cropRect.left, cropRect.right);
-			for (int y = minRow; y < maxRow; y++)
-			{
-				for (int x = minCol; x < maxCol; x++)
-				{
-					int index = (screenHeight - y - 1) * screenWidth* 3 + x * 3;
-					lpCropBitmap[index] = lpScreenBitmap[index];
-					lpCropBitmap[index + 1] = lpScreenBitmap[index + 1];
-					lpCropBitmap[index + 2] = lpScreenBitmap[index + 2];
-				}
-			}
+			OnDragCropRect(LOWORD(lParam),HIWORD(lParam));
 			::InvalidateRect(hWnd, nullptr, FALSE);
 		}
 		break;
@@ -287,34 +325,7 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	{
 		if (wParam == 0X0d)
 		{
-			int left = min(cropRect.left, cropRect.right);
-			int right = max(cropRect.left, cropRect.right);
-			int top = min(cropRect.top, cropRect.bottom);
-			int bottom = max(cropRect.top, cropRect.bottom);
-			int width = right - left;
-			int height = bottom - top;
-			if (width > 0 && height > 0)
-			{
-				int saveLineBytes = ((width * 24 + 31) / 32) * 4;//每行字节数必须是4字节的整数倍
-				int screenLineBytes = screenWidth * 3;
-				int size = saveLineBytes * height;
-				unsigned char* cropData = new unsigned char[size];
-				for (int y = 0; y < height; y++)
-				{
-					int destIndex = y * saveLineBytes;
-					int srcIndex = (screenHeight - bottom + y) * screenLineBytes + left * 3;
-					memcpy(&cropData[destIndex], &lpScreenBitmap[srcIndex], saveLineBytes);
-				}
-				time_t seconds = time(0);
-				int s = seconds % 60;
-				int m = (seconds % 3600) / 60;
-				int h = (seconds % (3600 * 24)) / 3600 + 8;
-				char timeBuf[128] = { 0 };
-				sprintf_s(timeBuf, 128, "capture-%02d-%02d-%02d.bmp", h, m, s);
-
-				SaveBitmap(cropData, width, height, size, timeBuf);
-				delete[] cropData;
-			}
+			SaveCropRectImage();
 			::DestroyWindow(hWnd);
 		}
 		break;
