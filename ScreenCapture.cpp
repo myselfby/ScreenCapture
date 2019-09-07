@@ -6,11 +6,11 @@
 #define EXIT_CAPTURE_KEY 0x30
 #define START_CAPTURE_KEY 0x31
 
-LPCWSTR lpTitle= L"ScreenCapture";                  // ±êÌâÀ¸ÎÄ±¾
-LPCWSTR lpWindowClass = L"ScreenCapture" ;            // Ö÷´°¿ÚÀàÃû
+LPCWSTR lpTitle= L"ScreenCapture";                  // æ ‡é¢˜æ æ–‡æœ¬
+LPCWSTR lpWindowClass = L"ScreenCapture" ;            // ä¸»çª—å£ç±»å
 
-bool bAllwaysTopmost = false;//½ØÍ¼´°¿ÚÊÇ·ñÊ¼ÖÕ´¦ÓÚ×î¶¥²ã£¬È·±£ÄãÄÜ¿ØÖÆµÃ×¡ÔÙÆôÓÃbAllwaysTopmost
-bool bCaptureRealtime = false;//ÊÇ·ñ½ØÈ¡ÊµÊ±×ÀÃæ£¬½ØÈ¡ÊµÊ±×ÀÃæÊ±´°¿ÚÊÇ°ëÍ¸Ã÷£¬ÄÜ¿´µ½×ÀÃæÉÏµÄ±ä»¯£¬·ñÔòÖ»ÊÇ½«×ÀÃæ×÷Îª±³¾°£¬¿´²»µ½×ÀÃæµÄ±ä»¯
+bool bAllwaysTopmost = false;//æˆªå›¾çª—å£æ˜¯å¦å§‹ç»ˆå¤„äºæœ€é¡¶å±‚ï¼Œç¡®ä¿ä½ èƒ½æ§åˆ¶å¾—ä½å†å¯ç”¨bAllwaysTopmost
+bool bCaptureRealtime = false;//æ˜¯å¦æˆªå–å®æ—¶æ¡Œé¢ï¼Œæˆªå–å®æ—¶æ¡Œé¢æ—¶çª—å£æ˜¯åŠé€æ˜ï¼Œèƒ½çœ‹åˆ°æ¡Œé¢ä¸Šçš„å˜åŒ–ï¼Œå¦åˆ™åªæ˜¯å°†æ¡Œé¢ä½œä¸ºèƒŒæ™¯ï¼Œçœ‹ä¸åˆ°æ¡Œé¢çš„å˜åŒ–
 
 bool CaptureScreenBitmap(int x, int y, int width, int height, unsigned char* outData);
 bool CaptureFullScreenBitmap();
@@ -49,7 +49,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	wcex.hInstance = hInstance;
 	wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_APPLICATION));
 	wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-	wcex.hbrBackground = CreateSolidBrush(RGB(0,0,0)); NULL;// (HBRUSH)(COLOR_WINDOW + 1);
+	wcex.hbrBackground = CreateSolidBrush(RGB(0,0,0));// (HBRUSH)(COLOR_WINDOW + 1);
 	wcex.lpszMenuName = NULL;
 	wcex.lpszClassName = lpWindowClass;
 	wcex.hIconSm = NULL;
@@ -101,12 +101,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 
 bool CaptureScreenBitmap(int x, int y, int width, int height, unsigned char* outData)
 {
-	//»ñÈ¡ÆÁÄ»DC¾ä±úÒÔ¼°´´½¨¼æÈİµÄÄÚ´æDC
+	//è·å–å±å¹•DCå¥æŸ„ä»¥åŠåˆ›å»ºå…¼å®¹çš„å†…å­˜DC
 	HDC hdcScreen = GetDC(NULL);
 	HDC hdcMemDC = CreateCompatibleDC(hdcScreen);
 	HBITMAP hbmScreen = CreateCompatibleBitmap(hdcScreen, width, height);
 
-	//Î»Í¼ĞÅÏ¢
+	//ä½å›¾ä¿¡æ¯
 	BITMAPINFO bi;
 	bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
 	bi.bmiHeader.biWidth = width;
@@ -120,13 +120,13 @@ bool CaptureScreenBitmap(int x, int y, int width, int height, unsigned char* out
 	bi.bmiHeader.biClrUsed = 0;
 	bi.bmiHeader.biClrImportant = 0;
 
-	//»ñÈ¡ÆÁÄ»ÑÕÉ«ĞÅÏ¢
+	//è·å–å±å¹•é¢œè‰²ä¿¡æ¯
 	SelectObject(hdcMemDC, hbmScreen);
 	if (BitBlt(hdcMemDC, 0, 0, width, height, hdcScreen, x, y, SRCCOPY))
 	{
 		GetDIBits(hdcMemDC, hbmScreen, 0, height, outData, &bi, DIB_RGB_COLORS);
 	}
-	//ÊÍ·Å×ÊÔ´
+	//é‡Šæ”¾èµ„æº
 	DeleteObject(hbmScreen);
 	DeleteObject(hdcMemDC);
 	ReleaseDC(NULL, hdcScreen);
@@ -140,27 +140,30 @@ bool CaptureFullScreenBitmap()
 	lpScreenBitmap = new unsigned char[bmpSize];
 	lpCropBitmap = new unsigned char[bmpSize];
 	memset(lpScreenBitmap, 0, bmpSize);
-	CaptureScreenBitmap(0,0,screenWidth,screenHeight,lpScreenBitmap);
-	for (DWORD i = 0; i < bmpSize; i++)
+	memset(lpCropBitmap, 0, bmpSize);
+	if (!bCaptureRealtime)
 	{
-		lpCropBitmap[i] = lpScreenBitmap[i] / 2;
+		CaptureScreenBitmap(0, 0, screenWidth, screenHeight, lpScreenBitmap);
+		for (DWORD i = 0; i < bmpSize; i++)
+		{
+			lpCropBitmap[i] = lpScreenBitmap[i] / 2;
+		}
 	}
 	return true;
 }
 
 HWND CreateCropWindow(HINSTANCE hInstance)
 {
-	bool bAllwaysTopmost = false;	
 	CaptureFullScreenBitmap();
 
-	DWORD dwExStyle = WS_EX_TOOLWINDOW;//²»ÏÔÊ¾ÔÚÈÎÎñÀ¸ÖĞ
+	DWORD dwExStyle = WS_EX_TOOLWINDOW;//ä¸æ˜¾ç¤ºåœ¨ä»»åŠ¡æ ä¸­
 	if (bAllwaysTopmost)
 	{
-		dwExStyle |= WS_EX_TOPMOST;//Ê¼ÖÕ´¦ÓÚ×î¶¥²ã
+		dwExStyle |= WS_EX_TOPMOST;//å§‹ç»ˆå¤„äºæœ€é¡¶å±‚
 	}
 	if (bCaptureRealtime)
 	{
-		dwExStyle |= WS_EX_LAYERED;//ÒªÊ¹´°¿ÚÍ¸Ã÷±ØĞëÆôÓÃWS_EX_LAYERED
+		dwExStyle |= WS_EX_LAYERED;//è¦ä½¿çª—å£é€æ˜å¿…é¡»å¯ç”¨WS_EX_LAYERED
 	}
 	HWND hWnd = CreateWindowExW(dwExStyle, lpWindowClass, lpTitle, WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_POPUP,
 		0, 0, screenWidth, screenHeight, nullptr, nullptr, hInstance, nullptr);
@@ -172,11 +175,11 @@ HWND CreateCropWindow(HINSTANCE hInstance)
 	{
 		if (!bAllwaysTopmost)
 		{
-			BringWindowToTop(hWnd);//µÚÒ»´ÎÖÃÓÚ¶¥²ã
+			BringWindowToTop(hWnd);//ç¬¬ä¸€æ¬¡ç½®äºé¡¶å±‚
 		}
 		if (bCaptureRealtime)
 		{
-			//´°¿ÚÖĞÑÕÉ«ÎªRGB(255, 255, 255)´¦¶¼ÊÇÍ¸Ã÷£¬ÆäËûÏñËØ´¦²»Í¸Ã÷¶ÈÎª128
+			//çª—å£ä¸­é¢œè‰²ä¸ºRGB(255, 255, 255)å¤„éƒ½æ˜¯é€æ˜ï¼Œå…¶ä»–åƒç´ å¤„ä¸é€æ˜åº¦ä¸º128
 			::SetLayeredWindowAttributes(hWnd, RGB(255, 255, 255), 128, LWA_COLORKEY | LWA_ALPHA);
 		}
 		ShowWindow(hWnd, SW_SHOW);
@@ -207,9 +210,9 @@ bool SaveBitmap(const unsigned char* data, int width, int height,DWORD size, con
 	fopen_s(&pFile, filename, "wb");
 	if (pFile)
 	{
-		DWORD bmpDataSize = width * height * 3;//Êı¾İ×Ö½ÚÊı
+		DWORD bmpDataSize = width * height * 3;//æ•°æ®å­—èŠ‚æ•°
 
-		BITMAPINFOHEADER   bmpInfoHeader;//bmpĞÅÏ¢Í·
+		BITMAPINFOHEADER   bmpInfoHeader;//bmpä¿¡æ¯å¤´
 		bmpInfoHeader.biSize = sizeof(BITMAPINFOHEADER);
 		bmpInfoHeader.biWidth = width;
 		bmpInfoHeader.biHeight = height;
@@ -222,12 +225,12 @@ bool SaveBitmap(const unsigned char* data, int width, int height,DWORD size, con
 		bmpInfoHeader.biClrUsed = 0;
 		bmpInfoHeader.biClrImportant = 0;
 
-		BITMAPFILEHEADER   bmpFileHeader;//bmpÎÄ¼şÍ·
-		bmpFileHeader.bfType = 0x4D42; //BM bmpÎÄ¼ş±êÊ¶·û
-		bmpFileHeader.bfOffBits = sizeof(bmpFileHeader) + sizeof(bmpInfoHeader);//bmpÑÕÉ«Êı¾İÆ«ÒÆ
-		bmpFileHeader.bfSize = size + sizeof(bmpFileHeader) + sizeof(bmpInfoHeader);//BMPÎÄ¼ş´óĞ¡
+		BITMAPFILEHEADER   bmpFileHeader;//bmpæ–‡ä»¶å¤´
+		bmpFileHeader.bfType = 0x4D42; //BM bmpæ–‡ä»¶æ ‡è¯†ç¬¦
+		bmpFileHeader.bfOffBits = sizeof(bmpFileHeader) + sizeof(bmpInfoHeader);//bmpé¢œè‰²æ•°æ®åç§»
+		bmpFileHeader.bfSize = size + sizeof(bmpFileHeader) + sizeof(bmpInfoHeader);//BMPæ–‡ä»¶å¤§å°
 
-		//ÒÀ´ÎĞ´ÈëÎÄ¼şÍ·£¬ĞÅÏ¢Í·ºÍÊı¾İ
+		//ä¾æ¬¡å†™å…¥æ–‡ä»¶å¤´ï¼Œä¿¡æ¯å¤´å’Œæ•°æ®
 		fwrite(&bmpFileHeader, sizeof(bmpFileHeader), 1, pFile);
 		fwrite(&bmpInfoHeader, sizeof(bmpInfoHeader), 1, pFile);
 		fwrite(data, 1, size, pFile);
@@ -246,7 +249,7 @@ void SaveCropRectImage()
 	int height = bottom - top + 1;
 	if (width > 0 && height > 0)
 	{
-		int saveLineBytes = ((width * 24 + 31) / 32) * 4;//Ã¿ĞĞ×Ö½ÚÊı±ØĞëÊÇ4×Ö½ÚµÄÕûÊı±¶
+		int saveLineBytes = ((width * 24 + 31) / 32) * 4;//æ¯è¡Œå­—èŠ‚æ•°å¿…é¡»æ˜¯4å­—èŠ‚çš„æ•´æ•°å€
 		int screenLineBytes = screenWidth * 3;
 		int size = saveLineBytes * height;
 		unsigned char* cropData = new unsigned char[size];
@@ -288,7 +291,7 @@ void OnDragCropRect(int xPos,int yPos)
 			int index = (screenHeight - y - 1) * screenWidth * 3 + x * 3;
 			if (bCaptureRealtime)
 			{
-				//½ØÈ¡ÊµÊ±Í¼ÏóÊ±½«½ØÈ¡ÇøÓòÍâµÄÏñËØÑÕÉ«ÉèÎªRGB(0,0,0)
+				//æˆªå–å®æ—¶å›¾è±¡æ—¶å°†æˆªå–åŒºåŸŸå¤–çš„åƒç´ é¢œè‰²è®¾ä¸ºRGB(0,0,0)
 				lpCropBitmap[index] = 0;
 				lpCropBitmap[index + 1] = 0;
 				lpCropBitmap[index + 2] = 0;
@@ -303,7 +306,7 @@ void OnDragCropRect(int xPos,int yPos)
 	}
 	if (bCaptureRealtime)
 	{
-		//Èç¹ûÊó±êÏÂµÄÏñËØÍ¸Ã÷¾ÍÊÕ²»µ½´°¿ÚÏûÏ¢£¬ËùÒÔ½ØÈ¡ÇøÓòËõĞ¡Á½¸öÏñËØ
+		//å¦‚æœé¼ æ ‡ä¸‹çš„åƒç´ é€æ˜å°±æ”¶ä¸åˆ°çª—å£æ¶ˆæ¯ï¼Œæ‰€ä»¥æˆªå–åŒºåŸŸç¼©å°ä¸¤ä¸ªåƒç´ 
 		if (xPos >= cropRect.left)
 		{
 			xPos -= 2;
