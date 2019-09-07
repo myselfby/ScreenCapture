@@ -179,8 +179,8 @@ HWND CreateCropWindow(HINSTANCE hInstance)
 		}
 		if (bCaptureRealtime)
 		{
-			//窗口中颜色为RGB(255, 255, 255)处都是透明，其他像素处不透明度为128
-			::SetLayeredWindowAttributes(hWnd, RGB(255, 255, 255), 128, LWA_COLORKEY | LWA_ALPHA);
+			//窗口中颜色为RGB(0, 0, 255)处都是透明，其他像素处不透明度为128
+			::SetLayeredWindowAttributes(hWnd, RGB(0, 0, 255), 128, LWA_COLORKEY | LWA_ALPHA);
 		}
 		ShowWindow(hWnd, SW_SHOW);
 		UpdateWindow(hWnd);
@@ -304,26 +304,6 @@ void OnDragCropRect(int xPos,int yPos)
 			}
 		}
 	}
-	if (bCaptureRealtime)
-	{
-		//如果鼠标下的像素透明就收不到窗口消息，所以截取区域缩小两个像素
-		if (xPos >= cropRect.left)
-		{
-			xPos -= 2;
-		}
-		else
-		{
-			xPos += 2;
-		}
-		if (yPos >= cropRect.top)
-		{
-			yPos -= 2;
-		}
-		else
-		{
-			yPos += 2;
-		}
-	}
 	cropRect.right = xPos<0?0:(xPos>=screenWidth?screenWidth-1:xPos);
 	cropRect.bottom = yPos<0?0:(yPos>=screenHeight?screenHeight-1:yPos);
 	minRow = min(cropRect.top, cropRect.bottom);
@@ -338,8 +318,8 @@ void OnDragCropRect(int xPos,int yPos)
 			if (bCaptureRealtime)
 			{
 				lpCropBitmap[index] = 255;
-				lpCropBitmap[index + 1] = 255;
-				lpCropBitmap[index + 2] = 255;
+				lpCropBitmap[index + 1] = 0;
+				lpCropBitmap[index + 2] = 0;
 			}
 			else
 			{
