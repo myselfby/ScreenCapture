@@ -9,7 +9,11 @@
 LPCWSTR lpTitle= L"ScreenCapture";                  // 标题栏文本
 LPCWSTR lpWindowClass = L"ScreenCapture" ;            // 主窗口类名
 
-bool CaptureScreenBitmap();
+bool bAllwaysTopmost = false;//截图窗口是否始终处于最顶层，确保你能控制得住再启用bAllwaysTopmost
+bool bCaptureRealtime = false;//是否截取实时桌面，截取实时桌面时窗口是半透明，能看到桌面上的变化，否则只是将桌面作为背景，看不到桌面的变化
+
+bool CaptureScreenBitmap(int x, int y, int width, int height, unsigned char* outData);
+bool CaptureFullScreenBitmap();
 HWND CreateCropWindow(HINSTANCE hInstance);
 void TileBitmapToWindow(HDC hDC);
 bool SaveBitmap(const unsigned char* data, int width, int height, DWORD size, const char* filename);
@@ -22,6 +26,7 @@ int screenHeight = 0;
 
 unsigned char* lpCropBitmap = nullptr;
 RECT cropRect;
+
 
 LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -44,7 +49,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	wcex.hInstance = hInstance;
 	wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_APPLICATION));
 	wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
-	wcex.hbrBackground = NULL;
+	wcex.hbrBackground = CreateSolidBrush(RGB(0,0,0)); NULL;// (HBRUSH)(COLOR_WINDOW + 1);
 	wcex.lpszMenuName = NULL;
 	wcex.lpszClassName = lpWindowClass;
 	wcex.hIconSm = NULL;
@@ -67,7 +72,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	{
 		return FALSE;
 	}
-
 	MSG msg;
 	while (GetMessage(&msg, nullptr, 0, 0))
 	{
@@ -94,18 +98,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	return (int)msg.wParam;
 }
 
-bool CaptureScreenBitmap()
+
+bool CaptureScreenBitmap(int x, int y, int width, int height, unsigned char* outData)
 {
 	//获取屏幕DC句柄以及创建兼容的内存DC
 	HDC hdcScreen = GetDC(NULL);
 	HDC hdcMemDC = CreateCompatibleDC(hdcScreen);
-	HBITMAP hbmScreen = CreateCompatibleBitmap(hdcScreen, screenWidth, screenHeight);
+	HBITMAP hbmScreen = CreateCompatibleBitmap(hdcScreen, width, height);
 
 	//位图信息
 	BITMAPINFO bi;
 	bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
-	bi.bmiHeader.biWidth = screenWidth;
-	bi.bmiHeader.biHeight = screenHeight;
+	bi.bmiHeader.biWidth = width;
+	bi.bmiHeader.biHeight = height;
 	bi.bmiHeader.biPlanes = 1;
 	bi.bmiHeader.biBitCount = 24;
 	bi.bmiHeader.biCompression = BI_RGB;
@@ -115,19 +120,11 @@ bool CaptureScreenBitmap()
 	bi.bmiHeader.biClrUsed = 0;
 	bi.bmiHeader.biClrImportant = 0;
 
-	DWORD bmpSize = ((screenWidth * bi.bmiHeader.biBitCount + 31) / 32) * 4 * screenHeight;
-	lpScreenBitmap = new unsigned char[bmpSize];
-	lpCropBitmap = new unsigned char[bmpSize];
-	memset(lpScreenBitmap, 0, bmpSize);
 	//获取屏幕颜色信息
 	SelectObject(hdcMemDC, hbmScreen);
-	if (BitBlt(hdcMemDC, 0, 0, screenWidth, screenHeight, hdcScreen, 0, 0, SRCCOPY))
+	if (BitBlt(hdcMemDC, 0, 0, width, height, hdcScreen, x, y, SRCCOPY))
 	{
-		GetDIBits(hdcMemDC, hbmScreen, 0, screenHeight, lpScreenBitmap, &bi, DIB_RGB_COLORS);
-		for (DWORD i = 0; i < bmpSize; i++)
-		{
-			lpCropBitmap[i] = lpScreenBitmap[i] / 2;
-		}
+		GetDIBits(hdcMemDC, hbmScreen, 0, height, outData, &bi, DIB_RGB_COLORS);
 	}
 	//释放资源
 	DeleteObject(hbmScreen);
@@ -136,26 +133,51 @@ bool CaptureScreenBitmap()
 	return true;
 }
 
+bool CaptureFullScreenBitmap()
+{
+	int bitCount = 24;
+	DWORD bmpSize = ((screenWidth * bitCount + 31) / 32) * 4 * screenHeight;
+	lpScreenBitmap = new unsigned char[bmpSize];
+	lpCropBitmap = new unsigned char[bmpSize];
+	memset(lpScreenBitmap, 0, bmpSize);
+	CaptureScreenBitmap(0,0,screenWidth,screenHeight,lpScreenBitmap);
+	for (DWORD i = 0; i < bmpSize; i++)
+	{
+		lpCropBitmap[i] = lpScreenBitmap[i] / 2;
+	}
+	return true;
+}
+
 HWND CreateCropWindow(HINSTANCE hInstance)
 {
-	bool bAllwaysTopmost = false;	//确保你能控制得住再启用bAllwaysTopmost
-	CaptureScreenBitmap();
+	bool bAllwaysTopmost = false;	
+	CaptureFullScreenBitmap();
 
 	DWORD dwExStyle = WS_EX_TOOLWINDOW;//不显示在任务栏中
 	if (bAllwaysTopmost)
 	{
 		dwExStyle |= WS_EX_TOPMOST;//始终处于最顶层
 	}
+	if (bCaptureRealtime)
+	{
+		dwExStyle |= WS_EX_LAYERED;//要使窗口透明必须启用WS_EX_LAYERED
+	}
 	HWND hWnd = CreateWindowExW(dwExStyle, lpWindowClass, lpTitle, WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_POPUP,
 		0, 0, screenWidth, screenHeight, nullptr, nullptr, hInstance, nullptr);
 	//HWND hWnd = CreateWindowW(lpWindowClass, lpTitle, WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_POPUP,
 	//	0, 0, screenWidth, screenHeight, nullptr, nullptr, hInstance, nullptr);
 	//if(hWnd)::SetWindowPos(hWnd, HWND_TOPMOST,0,0,screenWidth,screenHeight, SWP_NOMOVE | SWP_NOSIZE);
+	//if(hWnd)::SetWindowLong(hWnd, GWL_EXSTYLE,dwExStyle);
 	if (hWnd)
 	{
 		if (!bAllwaysTopmost)
 		{
 			BringWindowToTop(hWnd);//第一次置于顶层
+		}
+		if (bCaptureRealtime)
+		{
+			//窗口中颜色为RGB(255, 255, 255)处都是透明，其他像素处不透明度为128
+			::SetLayeredWindowAttributes(hWnd, RGB(255, 255, 255), 128, LWA_COLORKEY | LWA_ALPHA);
 		}
 		ShowWindow(hWnd, SW_SHOW);
 		UpdateWindow(hWnd);
@@ -228,11 +250,18 @@ void SaveCropRectImage()
 		int screenLineBytes = screenWidth * 3;
 		int size = saveLineBytes * height;
 		unsigned char* cropData = new unsigned char[size];
-		for (int y = 0; y < height; y++)
+		if (bCaptureRealtime)
 		{
-			int destIndex = y * saveLineBytes;
-			int srcIndex = (screenHeight - bottom - 1 + y) * screenLineBytes + left * 3;
-			memcpy(&cropData[destIndex], &lpScreenBitmap[srcIndex], saveLineBytes);
+			CaptureScreenBitmap(left, top, width, height, cropData);
+		}
+		else
+		{
+			for (int y = 0; y < height; y++)
+			{
+				int destIndex = y * saveLineBytes;
+				int srcIndex = (screenHeight - bottom - 1 + y) * screenLineBytes + left * 3;
+				memcpy(&cropData[destIndex], &lpScreenBitmap[srcIndex], saveLineBytes);
+			}
 		}
 		time_t seconds = time(0);
 		int s = seconds % 60;
@@ -257,13 +286,43 @@ void OnDragCropRect(int xPos,int yPos)
 		for (int x = minCol; x <= maxCol; x++)
 		{
 			int index = (screenHeight - y - 1) * screenWidth * 3 + x * 3;
-			lpCropBitmap[index] = lpScreenBitmap[index] / 2;
-			lpCropBitmap[index + 1] = lpScreenBitmap[index + 1] / 2;
-			lpCropBitmap[index + 2] = lpScreenBitmap[index + 2] / 2;
+			if (bCaptureRealtime)
+			{
+				//截取实时图象时将截取区域外的像素颜色设为RGB(0,0,0)
+				lpCropBitmap[index] = 0;
+				lpCropBitmap[index + 1] = 0;
+				lpCropBitmap[index + 2] = 0;
+			}
+			else
+			{
+				lpCropBitmap[index] = lpScreenBitmap[index] / 2;
+				lpCropBitmap[index + 1] = lpScreenBitmap[index + 1] / 2;
+				lpCropBitmap[index + 2] = lpScreenBitmap[index + 2] / 2;
+			}
 		}
 	}
-	cropRect.right = xPos;
-	cropRect.bottom = yPos;
+	if (bCaptureRealtime)
+	{
+		//如果鼠标下的像素透明就收不到窗口消息，所以截取区域缩小两个像素
+		if (xPos >= cropRect.left)
+		{
+			xPos -= 2;
+		}
+		else
+		{
+			xPos += 2;
+		}
+		if (yPos >= cropRect.top)
+		{
+			yPos -= 2;
+		}
+		else
+		{
+			yPos += 2;
+		}
+	}
+	cropRect.right = xPos<0?0:(xPos>=screenWidth?screenWidth-1:xPos);
+	cropRect.bottom = yPos<0?0:(yPos>=screenHeight?screenHeight-1:yPos);
 	minRow = min(cropRect.top, cropRect.bottom);
 	maxRow = max(cropRect.top, cropRect.bottom);
 	minCol = min(cropRect.left, cropRect.right);
@@ -273,9 +332,18 @@ void OnDragCropRect(int xPos,int yPos)
 		for (int x = minCol; x <= maxCol; x++)
 		{
 			int index = (screenHeight - y - 1) * screenWidth * 3 + x * 3;
-			lpCropBitmap[index] = lpScreenBitmap[index];
-			lpCropBitmap[index + 1] = lpScreenBitmap[index + 1];
-			lpCropBitmap[index + 2] = lpScreenBitmap[index + 2];
+			if (bCaptureRealtime)
+			{
+				lpCropBitmap[index] = 255;
+				lpCropBitmap[index + 1] = 255;
+				lpCropBitmap[index + 2] = 255;
+			}
+			else
+			{
+				lpCropBitmap[index] = lpScreenBitmap[index];
+				lpCropBitmap[index + 1] = lpScreenBitmap[index + 1];
+				lpCropBitmap[index + 2] = lpScreenBitmap[index + 2];
+			}
 		}
 	}
 }
