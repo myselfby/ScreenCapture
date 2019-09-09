@@ -19,17 +19,17 @@ enum ECaptureStatus
 
 enum ESizeBoxLocation
 {
-	CL_None,
-	CL_All,
-	CL_LeftTop,
-	CL_LeftMid,
-	CL_LeftBot,
-	CL_MidTop,
-	CL_MidBot,
-	CL_RightTop,
-	CL_RightMid,
-	CL_RightBot,
-	CL_Max
+	SBL_None,
+	SBL_All,
+	SBL_LeftTop,
+	SBL_LeftMid,
+	SBL_LeftBot,
+	SBL_MidTop,
+	SBL_MidBot,
+	SBL_RightTop,
+	SBL_RightMid,
+	SBL_RightBot,
+	SBL_Max
 };
 
 LPCWSTR lpTitle = L"ScreenCapture";                  // 标题栏文本
@@ -58,7 +58,7 @@ unsigned char* lpCropBitmap = nullptr;
 RECT cropRect;
 
 ECaptureStatus currentStatus = ECaptureStatus::CS_NoCapture;
-ESizeBoxLocation curSizeBoxLocation = CL_None;
+ESizeBoxLocation curSizeBoxLocation = SBL_None;
 HCURSOR defaultCursor = NULL;
 POINT prevMousePos;//上一次鼠标位置
 
@@ -404,7 +404,7 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 		{
 			curSizeBoxLocation = GetSizeBoxLocation(x, y);
 			UpdateMouseCursor(hWnd, curSizeBoxLocation);
-			if (curSizeBoxLocation > CL_None && curSizeBoxLocation < CL_Max)
+			if (curSizeBoxLocation > SBL_None && curSizeBoxLocation < SBL_Max)
 			{
 				currentStatus = ECaptureStatus::CS_FixCrop;
 			}
@@ -512,7 +512,7 @@ void OnMouseMove(HWND hWnd, int x, int y)
 		int height = cropRect.bottom - cropRect.top;
 		switch (curSizeBoxLocation)
 		{
-		case CL_All:
+		case SBL_All:
 		{
 			cropRect.left += deltax;
 			cropRect.top += deltay;
@@ -538,7 +538,7 @@ void OnMouseMove(HWND hWnd, int x, int y)
 			cropRect.bottom = cropRect.top + height;
 			break;
 		}
-		case CL_LeftTop:
+		case SBL_LeftTop:
 		{
 			cropRect.left += deltax;
 			cropRect.top += deltay;
@@ -560,7 +560,7 @@ void OnMouseMove(HWND hWnd, int x, int y)
 			}
 			break;
 		}
-		case CL_LeftMid:
+		case SBL_LeftMid:
 		{
 			cropRect.left += deltax;
 			if (cropRect.left < 0)
@@ -573,7 +573,7 @@ void OnMouseMove(HWND hWnd, int x, int y)
 			}
 			break;
 		}
-		case CL_LeftBot:
+		case SBL_LeftBot:
 		{
 			cropRect.left += deltax;
 			cropRect.bottom += deltay;
@@ -595,7 +595,7 @@ void OnMouseMove(HWND hWnd, int x, int y)
 			}
 			break;
 		}
-		case CL_MidTop:
+		case SBL_MidTop:
 		{
 			cropRect.top += deltay;
 			if (cropRect.top < 0)
@@ -608,7 +608,7 @@ void OnMouseMove(HWND hWnd, int x, int y)
 			}
 			break;
 		}
-		case CL_MidBot:
+		case SBL_MidBot:
 		{
 			cropRect.bottom += deltay;
 			if (cropRect.bottom <= cropRect.top)
@@ -621,7 +621,7 @@ void OnMouseMove(HWND hWnd, int x, int y)
 			}
 			break;
 		}
-		case CL_RightTop:
+		case SBL_RightTop:
 		{
 			cropRect.top += deltay;
 			cropRect.right += deltax;
@@ -643,7 +643,7 @@ void OnMouseMove(HWND hWnd, int x, int y)
 			}
 			break;
 		}
-		case CL_RightMid:
+		case SBL_RightMid:
 		{
 			cropRect.right += deltax;
 			if (cropRect.right <= cropRect.left)
@@ -656,7 +656,7 @@ void OnMouseMove(HWND hWnd, int x, int y)
 			}
 			break;
 		}
-		case CL_RightBot:
+		case SBL_RightBot:
 		{
 			cropRect.right += deltax;
 			cropRect.bottom += deltay;
@@ -756,42 +756,42 @@ ESizeBoxLocation GetSizeBoxLocation(int x, int y)
 	int ytop = cropRect.top;
 	int ybottom = cropRect.bottom;
 	int ymid = (ytop + ybottom) / 2;
-	ESizeBoxLocation location = CL_None;
+	ESizeBoxLocation location = SBL_None;
 	if (x > (xleft - SIZEBOX_HALF) && x<(xleft + SIZEBOX_HALF) && y>ytop - SIZEBOX_HALF && y < ytop + SIZEBOX_HALF)
 	{
-		location = CL_LeftTop;
+		location = SBL_LeftTop;
 	}
 	else if (x > (xleft - SIZEBOX_HALF) && x<(xleft + SIZEBOX_HALF) && y>ymid- SIZEBOX_HALF && y < ymid + SIZEBOX_HALF)
 	{
-		location = CL_LeftMid;
+		location = SBL_LeftMid;
 	}
 	else if (x > (xleft - SIZEBOX_HALF) && x<(xleft+ SIZEBOX_HALF) && y>ybottom- SIZEBOX_HALF && y < ybottom+ SIZEBOX_HALF)
 	{
-		location = CL_LeftBot;
+		location = SBL_LeftBot;
 	}
 	else if (x > (xmid - SIZEBOX_HALF) && x<(xmid+ SIZEBOX_HALF) && y>ytop- SIZEBOX_HALF && y < ytop+ SIZEBOX_HALF)
 	{
-		location = CL_MidTop;
+		location = SBL_MidTop;
 	}
 	else if (x > (xmid- SIZEBOX_HALF) && x<(xmid+ SIZEBOX_HALF) && y>ybottom- SIZEBOX_HALF && y < ybottom+ SIZEBOX_HALF)
 	{
-		location = CL_MidBot;
+		location = SBL_MidBot;
 	}
 	else if (x > (xright - SIZEBOX_HALF) && x<(xright+ SIZEBOX_HALF) && y>ytop- SIZEBOX_HALF && y < ytop+ SIZEBOX_HALF)
 	{
-		location = CL_RightTop;
+		location = SBL_RightTop;
 	}
 	else if (x > (xright- SIZEBOX_HALF) && x<(xright+ SIZEBOX_HALF) && y>ymid- SIZEBOX_HALF && y < ymid+ SIZEBOX_HALF)
 	{
-		location = CL_RightMid;
+		location = SBL_RightMid;
 	}
 	else if (x > (xright - SIZEBOX_HALF) && x<(xright+ SIZEBOX_HALF) && y>ybottom- SIZEBOX_HALF && y < ybottom+ SIZEBOX_HALF)
 	{
-		location = CL_RightBot;
+		location = SBL_RightBot;
 	}
 	else if (x > xleft&&x<xright&&y>ytop&&y < ybottom)
 	{
-		location = CL_All;
+		location = SBL_All;
 	}
 	return location;
 }
@@ -801,34 +801,55 @@ void UpdateMouseCursor(HWND hWnd, ESizeBoxLocation location)
 	{
 		defaultCursor = ::GetCursor();
 	}
-	if (location == CL_All)
+#ifdef _WIN64
+	if (location == SBL_All)
+	{
+		::SetCursor(LoadCursor(NULL, IDC_SIZEALL));
+	}
+	else if (location == SBL_LeftTop || location == SBL_RightBot)
+	{
+		::SetCursor(LoadCursor(NULL, IDC_SIZENWSE));
+	}
+	else if (location == SBL_LeftMid || location == SBL_RightMid)
+	{
+		::SetCursor(LoadCursor(NULL, IDC_SIZEWE));
+	}
+	else if (location == SBL_LeftBot || location == SBL_RightTop)
+	{
+		::SetCursor(LoadCursor(NULL, IDC_SIZENESW));
+	}
+	else if (location == SBL_MidTop || location == SBL_MidBot)
+	{
+		::SetCursor(LoadCursor(NULL, IDC_SIZENS));
+	}
+	else
+	{
+		::SetCursor(defaultCursor);
+	}
+#else
+	if (location == SBL_All)
 	{
 		SetClassLong(hWnd, GCL_HCURSOR, (long)LoadCursor(NULL, IDC_SIZEALL));
-		//::SetCursor(LoadCursor(NULL, IDC_SIZEALL));
 	}
-	else if (location == CL_LeftTop || location == CL_RightBot)
+	else if (location == SBL_LeftTop || location == SBL_RightBot)
 	{
 		SetClassLong(hWnd, GCL_HCURSOR, (long)LoadCursor(NULL, IDC_SIZENWSE));
-		//::SetCursor(LoadCursor(NULL, IDC_SIZENWSE));
 	}
-	else if (location == CL_LeftMid || location == CL_RightMid)
+	else if (location == SBL_LeftMid || location == SBL_RightMid)
 	{
 		SetClassLong(hWnd, GCL_HCURSOR, (long)LoadCursor(NULL, IDC_SIZEWE));
-		//::SetCursor(LoadCursor(NULL, IDC_SIZEWE));
 	}
-	else if (location == CL_LeftBot || location == CL_RightTop)
+	else if (location == SBL_LeftBot || location == SBL_RightTop)
 	{
 		SetClassLong(hWnd, GCL_HCURSOR, (long)LoadCursor(NULL, IDC_SIZENESW));
-		//::SetCursor(LoadCursor(NULL, IDC_SIZENESW));
 	}
-	else if (location == CL_MidTop || location == CL_MidBot)
+	else if (location == SBL_MidTop || location == SBL_MidBot)
 	{
 		SetClassLong(hWnd, GCL_HCURSOR, (long)LoadCursor(NULL, IDC_SIZENS));
-		//::SetCursor(LoadCursor(NULL, IDC_SIZENS));
 	}
 	else
 	{
 		SetClassLong(hWnd, GCL_HCURSOR, (long)defaultCursor);
-		//::SetCursor(defaultCursor);
 	}
+#endif
 }
