@@ -2,10 +2,12 @@
 #include<stdio.h>
 #include<math.h>
 #include<time.h>
+#include<CommCtrl.h>
 
-#define EXIT_CAPTURE_KEY 0x30
-#define START_CAPTURE_KEY 0x31
-#define SIZEBOX_HALF 4
+#define EXIT_CAPTURE_KEY 0x30  //数字0键(CTRL+0)退出截图
+#define START_CAPTURE_KEY 0x31 //数字1键(CTRL+1)开始截图
+#define SIZEBOX_HALF 4  //裁剪盒8个角的小矩形宽度一半
+//截图状态
 enum ECaptureStatus
 {
 	CS_NoCapture,
@@ -16,7 +18,7 @@ enum ECaptureStatus
 	CS_FinishFixCrop,
 	CS_FinishCapture
 };
-
+//裁剪盒位置
 enum ESizeBoxLocation
 {
 	SBL_None,
@@ -31,36 +33,75 @@ enum ESizeBoxLocation
 	SBL_RightBot,
 	SBL_Max
 };
-
+//按钮的状态
+enum EButtonStatus
+{
+	BS_Normal,
+	BS_HOVER,
+	BS_PRESSED
+};
+//按钮ID
+enum EToolbarButtonId
+{
+	TBID_Finish,
+	TBID_Cancel,
+	TBID_Max
+};
+//工具条按钮结构
+struct ToolbarButton
+{
+	int id;
+	EButtonStatus status;
+	HBITMAP bmpNormal;
+	HBITMAP bmpHover;
+	HBITMAP bmpPressed;
+	RECT rect;
+};
 LPCWSTR lpTitle = L"ScreenCapture";                  // 标题栏文本
 LPCWSTR lpWindowClass = L"ScreenCapture";            // 主窗口类名
 
 bool bAllwaysTopmost = false;//截图窗口是否始终处于最顶层，确保你能控制得住再启用bAllwaysTopmost
-bool bCaptureRealtime = true;//是否截取实时桌面，截取实时桌面时窗口是半透明，能看到桌面上的变化，否则只是将桌面作为背景，看不到桌面的变化
+bool bCaptureRealtime = false;//是否截取实时桌面，截取实时桌面时窗口是半透明，能看到桌面上的变化，否则只是将桌面作为背景，看不到桌面的变化
 
-bool CaptureScreenBitmap(int x, int y, int width, int height, unsigned char* outData);
-bool CaptureFullScreenBitmap();
-HWND CreateCropWindow(HINSTANCE hInstance);
-void TileBitmapToWindow(HDC hDC);
-bool SaveBitmap(const unsigned char* data, int width, int height, DWORD size, const char* filename);
-void SaveCropRectImage();
-void OnDragCropRect(int xPos, int yPos);
-void DrawCropRectSizeBox(HDC hdc, const RECT& rect);
-ESizeBoxLocation GetSizeBoxLocation(int x, int y);
-void UpdateMouseCursor(HWND hWnd, ESizeBoxLocation location);
+bool CaptureScreenBitmap(int x, int y, int width, int height, unsigned char* outData);//捕获指定位置和大小的屏幕像素数据
+bool CaptureFullScreenBitmap();//捕获全屏像素数据
+HWND CreateCaptureWindow(HINSTANCE hInstance);//创匠屏幕截图窗口
+void TileBitmapToWindow(HDC hDC);//将lpCropBitmap贴到窗口背景上
+bool SaveBitmap(const unsigned char* data, int width, int height, DWORD size, const char* filename);//保存为BMP文件
+void SaveCropRectImage();//保存裁剪区域图片
+void OnDragCropRect(int xPos, int yPos);//鼠标在屏幕上拖动的事件，此时的状态是CS_DragCrop
+void DrawCropRectSizeBox(HDC hdc, const RECT& rect);//画裁剪盒
+ESizeBoxLocation GetSizeBoxLocation(int x, int y);//找到点(x,y)在裁剪盒区域的位置
+void UpdateMouseCursor(HWND hWnd, ESizeBoxLocation location);//根据鼠标在裁剪盒的位置更新鼠标形状
 void OnMouseMove(HWND hWnd, int x, int y);
+void OnLeftMouseButtonDown(HWND hWnd, int x, int y);
+void OnLeftMouseButtonUp(HWND hWnd, int x, int y);
+void OnToolbarCommand(HWND hWnd,int id);//Toolbar按钮点击事件
+void DrawCropSizeText(HDC hdc);//长x宽文本
+void DrawToolBar(HDC hdc);//画工具条
+int GetToolbarButtonAtPoint(int x, int y);//判断点(x,y)在哪个按钮区域
 
-unsigned char* lpScreenBitmap = nullptr;
+unsigned char* lpScreenBitmap = nullptr;//创建窗口前捕获的屏幕数据
 int screenWidth = 0;
 int screenHeight = 0;
 
-unsigned char* lpCropBitmap = nullptr;
-RECT cropRect;
+unsigned char* lpCropBitmap = nullptr;//包含蒙版区域和裁剪区域的位图象素数据
+RECT cropRect;//裁剪盒区域
 
-ECaptureStatus currentStatus = ECaptureStatus::CS_NoCapture;
-ESizeBoxLocation curSizeBoxLocation = SBL_None;
+ECaptureStatus currentStatus = ECaptureStatus::CS_NoCapture;//当前状态
+ESizeBoxLocation curSizeBoxLocation = SBL_None;//鼠标所在的裁剪盒的位置
 HCURSOR defaultCursor = NULL;
 POINT prevMousePos;//上一次鼠标位置
+
+//Toolbar按钮的位图文件，顺序是normal、hover、pressed
+const WCHAR* toolbarBmpFiles[] = {
+	L"Images/finish.bmp",L"Images/finish.bmp",L"Images/finish.bmp",
+	L"Images/cancel.bmp",L"Images/cancel.bmp",L"Images/cancel.bmp",
+	nullptr
+};
+ToolbarButton toolbarButtons[TBID_Max] = { 0 };//Toolbar按钮数组
+RECT toolbarRect = {0};//Toolbar区域
+HDC hTBCompatibleDC = NULL;//Toolbar按钮的内存DC
 
 LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -71,7 +112,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 {
 	UNREFERENCED_PARAMETER(hPrevInstance);
 	UNREFERENCED_PARAMETER(lpCmdLine);
-
 	WNDCLASSEXW wcex;
 
 	wcex.cbSize = sizeof(WNDCLASSEX);
@@ -91,7 +131,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	screenWidth = GetSystemMetrics(SM_CXSCREEN);
 	screenHeight = GetSystemMetrics(SM_CYSCREEN);
 
-	/*if (!CreateCropWindow(hInstance))
+	/*if (!CreateCaptureWindow(hInstance))
 	{
 		return FALSE;
 	}*/
@@ -121,7 +161,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 				}
 				else
 				{
-					hwnd = CreateCropWindow(hInstance);
+					hwnd = CreateCaptureWindow(hInstance);
 					currentStatus = ECaptureStatus::CS_Normal;
 				}
 			}
@@ -141,7 +181,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	return (int)msg.wParam;
 }
 
-
+template<typename T>
+void Swap(T& elem1,T& elem2)
+{
+	T tmp = elem1;
+	elem1 = elem2;
+	elem2 = tmp;
+}
 bool CaptureScreenBitmap(int x, int y, int width, int height, unsigned char* outData)
 {
 	//获取屏幕DC句柄以及创建兼容的内存DC
@@ -195,7 +241,7 @@ bool CaptureFullScreenBitmap()
 	return true;
 }
 
-HWND CreateCropWindow(HINSTANCE hInstance)
+HWND CreateCaptureWindow(HINSTANCE hInstance)
 {
 	CaptureFullScreenBitmap();
 
@@ -388,44 +434,35 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	case WM_CREATE:
 	{
 		cropRect.left = cropRect.right = cropRect.top = cropRect.bottom = 0;
+		int index = TBID_Finish;
+		for (int i = 0; toolbarBmpFiles[i] != nullptr && index < TBID_Max; i+=3)
+		{
+			ToolbarButton& button = toolbarButtons[index];
+			button.id = index;
+			index++;
+			button.status = EButtonStatus::BS_Normal;
+			HBITMAP hBmp = (HBITMAP)LoadImage(NULL, toolbarBmpFiles[i], IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+			button.bmpNormal = hBmp;
+			hBmp = (HBITMAP)LoadImage(NULL, toolbarBmpFiles[i+1], IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+			button.bmpHover = hBmp;
+			hBmp = (HBITMAP)LoadImage(NULL, toolbarBmpFiles[i + 2], IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE | LR_CREATEDIBSECTION);
+			button.bmpPressed = hBmp;
+		}
+		toolbarButtons[index].id = TBID_Max;
 		break;
 	}
 	case WM_LBUTTONDOWN:
 	{
 		int x = LOWORD(lParam);
 		int y = HIWORD(lParam);
-		if (cropRect.right == cropRect.left)
-		{
-			cropRect.right = cropRect.left = x;
-			cropRect.bottom = cropRect.top = y;
-			currentStatus = ECaptureStatus::CS_DragCrop;
-		}
-		else if(currentStatus == ECaptureStatus::CS_FinishDragCrop || currentStatus == ECaptureStatus::CS_FinishFixCrop)
-		{
-			curSizeBoxLocation = GetSizeBoxLocation(x, y);
-			UpdateMouseCursor(hWnd, curSizeBoxLocation);
-			if (curSizeBoxLocation > SBL_None && curSizeBoxLocation < SBL_Max)
-			{
-				currentStatus = ECaptureStatus::CS_FixCrop;
-			}
-		}
+		OnLeftMouseButtonDown(hWnd,x,y);
 		break;
 	}
 	case WM_LBUTTONUP:
 	{
-		if (currentStatus == ECaptureStatus::CS_DragCrop)
-		{
-			currentStatus = ECaptureStatus::CS_FinishDragCrop;
-			cropRect.left = min(cropRect.left, cropRect.right);
-			cropRect.right = max(cropRect.left, cropRect.right);
-			cropRect.top = min(cropRect.top, cropRect.bottom);
-			cropRect.bottom = max(cropRect.top, cropRect.bottom);
-			::InvalidateRect(hWnd, nullptr, FALSE);
-		}
-		else if (currentStatus == ECaptureStatus::CS_FixCrop)
-		{
-			currentStatus = ECaptureStatus::CS_FinishFixCrop;
-		}
+		int x = LOWORD(lParam);
+		int y = HIWORD(lParam);
+		OnLeftMouseButtonUp(hWnd,x,y);
 		break;
 	}
 	case WM_MOUSEMOVE:
@@ -446,6 +483,14 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 		{
 			DrawCropRectSizeBox(hdc,cropRect);
 		}
+		if (currentStatus > ECaptureStatus::CS_Normal)
+		{
+			DrawCropSizeText(hdc);
+		}
+		if (currentStatus > ECaptureStatus::CS_DragCrop)
+		{
+			DrawToolBar(hdc);
+		}
 		EndPaint(hWnd, &ps);
 		break;
 	}
@@ -453,20 +498,13 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	{
 		if (wParam == 0X0d)
 		{
-			currentStatus = ECaptureStatus::CS_FinishCapture;
-			if (bCaptureRealtime)
-			{
-				ShowWindow(hWnd,SW_HIDE);
-			}
-			SaveCropRectImage();
-			::DestroyWindow(hWnd);
+			OnToolbarCommand(hWnd,TBID_Finish);
 		}
 		break;
 	}
 	case WM_RBUTTONUP:
 	{
-		currentStatus = ECaptureStatus::CS_FinishCapture;
-		::DestroyWindow(hWnd);
+		OnToolbarCommand(hWnd,TBID_Cancel);
 		break;
 	}
 	case WM_DESTROY:
@@ -481,6 +519,23 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 		{
 			delete[] lpCropBitmap;
 			lpCropBitmap = nullptr;
+		}
+		for (int i = 0;; i++)
+		{
+			ToolbarButton& button = toolbarButtons[i];
+			if (button.id >= TBID_Max)
+			{
+				break;
+			}
+			button.id = TBID_Max;
+			DeleteObject(button.bmpNormal);
+			DeleteObject(button.bmpHover);
+			DeleteObject(button.bmpPressed);
+		}
+		if (hTBCompatibleDC)
+		{
+			::DeleteDC(hTBCompatibleDC);
+			hTBCompatibleDC = nullptr;
 		}
 		//PostQuitMessage(0);
 		break;
@@ -687,9 +742,178 @@ void OnMouseMove(HWND hWnd, int x, int y)
 	else if(currentStatus == ECaptureStatus::CS_FinishDragCrop || currentStatus == ECaptureStatus::CS_FinishFixCrop)
 	{
 		UpdateMouseCursor(hWnd, GetSizeBoxLocation(x, y));
+		int prevId = GetToolbarButtonAtPoint(prevMousePos.x,prevMousePos.y);
+		int id = GetToolbarButtonAtPoint(x, y);
+		if (prevId != id)
+		{
+			for (int i = 0;; i++)
+			{
+				ToolbarButton& button = toolbarButtons[i];
+				if (button.id >= TBID_Max)
+				{
+					break;
+				}
+				if (button.id == id)
+				{
+					button.status = EButtonStatus::BS_HOVER;
+				}
+				else
+				{
+					button.status = EButtonStatus::BS_Normal;
+				}
+			}
+			::InvalidateRect(hWnd, nullptr, FALSE);
+		}
 	}
 	prevMousePos.x = x;
 	prevMousePos.y = y;
+}
+void OnLeftMouseButtonDown(HWND hWnd, int x, int y)
+{
+	if (cropRect.right == cropRect.left)
+	{
+		cropRect.right = cropRect.left = x;
+		cropRect.bottom = cropRect.top = y;
+		currentStatus = ECaptureStatus::CS_DragCrop;
+	}
+	else if (currentStatus == ECaptureStatus::CS_FinishDragCrop || currentStatus == ECaptureStatus::CS_FinishFixCrop)
+	{
+		curSizeBoxLocation = GetSizeBoxLocation(x, y);
+		UpdateMouseCursor(hWnd, curSizeBoxLocation);
+		if (curSizeBoxLocation > SBL_None && curSizeBoxLocation < SBL_Max)
+		{
+			currentStatus = ECaptureStatus::CS_FixCrop;
+		}
+		else
+		{
+			if (x >= toolbarRect.left && x < toolbarRect.right&&y >= toolbarRect.top&&y < toolbarRect.bottom)
+			{
+				int id = GetToolbarButtonAtPoint(x, y);
+				if (id < TBID_Max)
+				{
+					for (int i = 0;; i++)
+					{
+						ToolbarButton& button = toolbarButtons[i];
+						if (button.id >= TBID_Max)
+						{
+							break;
+						}
+						if (button.id == id)
+						{
+							button.status = EButtonStatus::BS_PRESSED;
+						}
+						else
+						{
+							button.status = EButtonStatus::BS_Normal;
+						}
+					}
+					::InvalidateRect(hWnd, nullptr, FALSE);
+				}
+			}
+		}
+	}
+	prevMousePos.x = x;
+	prevMousePos.y = y;
+}
+
+void OnLeftMouseButtonUp(HWND hWnd,int x,int y)
+{
+	if (currentStatus == ECaptureStatus::CS_DragCrop)
+	{
+		currentStatus = ECaptureStatus::CS_FinishDragCrop;
+		if (cropRect.left > cropRect.right)
+		{
+			Swap(cropRect.left, cropRect.right);
+		}
+		if (cropRect.top > cropRect.bottom)
+		{
+			Swap(cropRect.top, cropRect.bottom);
+		}
+		::InvalidateRect(hWnd, nullptr, FALSE);
+	}
+	else if (currentStatus == ECaptureStatus::CS_FixCrop)
+	{
+		currentStatus = ECaptureStatus::CS_FinishFixCrop;
+	}
+	else if (currentStatus == ECaptureStatus::CS_FinishDragCrop || currentStatus == ECaptureStatus::CS_FinishFixCrop)
+	{
+		int id = GetToolbarButtonAtPoint(x,y);
+		if (id < TBID_Max)
+		{
+			for (int i = 0;; i++)
+			{
+				ToolbarButton& button = toolbarButtons[i];
+				if (button.id >= TBID_Max)
+				{
+					break;
+				}
+				if (button.id == id)
+				{
+					button.status = EButtonStatus::BS_HOVER;
+					OnToolbarCommand(hWnd, button.id);
+				}
+				else
+				{
+					button.status = EButtonStatus::BS_Normal;
+				}
+			}
+			::InvalidateRect(hWnd, nullptr, FALSE);
+		}
+	}
+	prevMousePos.x = x;
+	prevMousePos.y = y;
+}
+
+void OnToolbarCommand(HWND hWnd,int id)
+{
+	EToolbarButtonId btnID = (EToolbarButtonId)id;
+	switch (btnID)
+	{
+	case TBID_Finish:
+	{
+		currentStatus = ECaptureStatus::CS_FinishCapture;
+		if (bCaptureRealtime)
+		{
+			ShowWindow(hWnd, SW_HIDE);
+		}
+		SaveCropRectImage();
+		::DestroyWindow(hWnd);
+		break;
+	}
+	case TBID_Cancel:
+	{
+		currentStatus = ECaptureStatus::CS_FinishCapture;
+		::DestroyWindow(hWnd);
+		break;
+	}
+	case TBID_Max:
+		break;
+	default:
+		break;
+	}
+}
+
+int GetToolbarButtonAtPoint(int x, int y)
+{
+	int id = TBID_Max;
+	if (x >= toolbarRect.left && x < toolbarRect.right&&y >= toolbarRect.top&&y < toolbarRect.bottom)
+	{
+		bool bRedraw = false;
+		for (int i = 0;; i++)
+		{
+			ToolbarButton& button = toolbarButtons[i];
+			if (button.id >= TBID_Max)
+			{
+				break;
+			}
+			if (x >= button.rect.left && x < button.rect.right&&y >= button.rect.top&&y < button.rect.bottom)
+			{
+				id = button.id;
+				break;
+			}
+		}
+	}
+	return id;
 }
 void DrawRect(HDC hdc, const RECT& rect)
 {
@@ -852,4 +1076,79 @@ void UpdateMouseCursor(HWND hWnd, ESizeBoxLocation location)
 		SetClassLong(hWnd, GCL_HCURSOR, (long)defaultCursor);
 	}
 #endif
+}
+
+void DrawCropSizeText(HDC hdc)
+{
+	int width = fabs(cropRect.right - cropRect.left)+1;
+	int height = fabs(cropRect.bottom - cropRect.top)+1;
+
+	WCHAR text[100] = {0};
+	wsprintf(text,L"%dx%d",width,height);
+
+	//HFONT hFont = CreateFont(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS,
+	//	CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Times New Roman");
+	//HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+
+	COLORREF oldTextColor = ::SetTextColor(hdc,RGB(200,200,200));
+	COLORREF oldBkColor = ::SetBkColor(hdc,RGB(20,20,20));
+	//int oldMode = ::SetBkMode(hdc, TRANSPARENT);
+
+	int left = min(cropRect.left,cropRect.right);
+	int top = min(cropRect.top, cropRect.bottom);
+	RECT rc;
+	rc.left = left;
+	rc.right = left + 100;
+	rc.top = top<25?top+1:top-25;
+	rc.bottom = rc.top + 25;
+	DrawText(hdc,text,-1,&rc, DT_LEFT);
+
+	::SetTextColor(hdc, oldTextColor);
+	::SetBkColor(hdc,oldBkColor);
+	//::SetBkMode(hdc,oldMode);
+
+	//SelectObject(hdc, hOldFont);
+	//DeleteObject(hFont);
+}
+void DrawToolBar(HDC hdc)
+{
+	int x = cropRect.left+10;
+	int y = cropRect.bottom+2;
+	if (y + 40 > screenHeight)
+	{
+		y = cropRect.bottom - 45;
+	}
+	toolbarRect.left = x;
+	toolbarRect.top = y;
+	if (!hTBCompatibleDC)
+	{
+		hTBCompatibleDC = CreateCompatibleDC(hdc);
+	}
+	for (int i = 0;; i++)
+	{
+		int top = y;
+		ToolbarButton& button = toolbarButtons[i];
+		if (button.id >= TBID_Max)
+		{
+			break;
+		}
+		if (button.status == EButtonStatus::BS_Normal)
+		{
+			SelectObject(hTBCompatibleDC, button.bmpNormal);
+		}
+		else if (button.status == EButtonStatus::BS_HOVER )
+		{
+			SelectObject(hTBCompatibleDC, button.bmpHover);
+			top -= 1;
+		}
+		else
+		{
+			SelectObject(hTBCompatibleDC, button.bmpPressed);
+		}
+		BitBlt(hdc, x, top, 32, 32, hTBCompatibleDC, 0, 0, SRCCOPY);
+		button.rect = { x,top,x + 32,top + 32 };
+		x += 32;
+	}
+	toolbarRect.right = x;
+	toolbarRect.bottom = toolbarRect.top + 32;
 }
