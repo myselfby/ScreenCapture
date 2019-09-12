@@ -2,7 +2,7 @@
 #include<stdio.h>
 #include<math.h>
 #include<time.h>
-#include<CommCtrl.h>
+#include<vector>
 
 #define EXIT_CAPTURE_KEY 0x30  //数字0键(CTRL+0)退出截图
 #define START_CAPTURE_KEY 0x31 //数字1键(CTRL+1)开始截图
@@ -16,6 +16,7 @@ enum ECaptureStatus
 	CS_FinishDragCrop,
 	CS_FixCrop,
 	CS_FinishFixCrop,
+	CS_DrawGraph,
 	CS_FinishCapture
 };
 //裁剪盒位置
@@ -45,7 +46,15 @@ enum EToolbarButtonId
 {
 	TBID_Finish,
 	TBID_Cancel,
+	TBID_DrawLine,
 	TBID_Max
+};
+enum EGraphType
+{
+	GL_None,
+	GT_Line,
+	GT_Ellipse,
+	GT_Max
 };
 //工具条按钮结构
 struct ToolbarButton
@@ -56,6 +65,13 @@ struct ToolbarButton
 	HBITMAP bmpHover;
 	HBITMAP bmpPressed;
 	RECT rect;
+};
+//图形
+struct Graph
+{
+	std::vector<POINT> points;
+	EGraphType type;
+	bool bFinished;
 };
 LPCWSTR lpTitle = L"ScreenCapture";                  // 标题栏文本
 LPCWSTR lpWindowClass = L"ScreenCapture";            // 主窗口类名
@@ -68,7 +84,7 @@ bool CaptureFullScreenBitmap();//捕获全屏像素数据
 HWND CreateCaptureWindow(HINSTANCE hInstance);//创匠屏幕截图窗口
 void TileBitmapToWindow(HDC hDC);//将lpCropBitmap贴到窗口背景上
 bool SaveBitmap(const unsigned char* data, int width, int height, DWORD size, const char* filename);//保存为BMP文件
-void SaveCropRectImage();//保存裁剪区域图片
+void SaveCropRectImage(HDC hdc);//保存裁剪区域图片
 void OnDragCropRect(int xPos, int yPos);//鼠标在屏幕上拖动的事件，此时的状态是CS_DragCrop
 void DrawCropRectSizeBox(HDC hdc, const RECT& rect);//画裁剪盒
 ESizeBoxLocation GetSizeBoxLocation(int x, int y);//找到点(x,y)在裁剪盒区域的位置
@@ -79,32 +95,35 @@ void OnLeftMouseButtonUp(HWND hWnd, int x, int y);
 void OnToolbarCommand(HWND hWnd,int id);//Toolbar按钮点击事件
 void DrawCropSizeText(HDC hdc);//长x宽文本
 void DrawToolBar(HDC hdc);//画工具条
+void DrawGraph(HDC hdc, const std::vector<Graph>& graphs);
 int GetToolbarButtonAtPoint(int x, int y);//判断点(x,y)在哪个按钮区域
-
+void OnDraw(HWND hWnd, HDC hdc);
 unsigned char* lpScreenBitmap = nullptr;//创建窗口前捕获的屏幕数据
-int screenWidth = 0;
-int screenHeight = 0;
+int screenWidth = 0;//屏幕宽
+int screenHeight = 0;//屏幕高
 
 unsigned char* lpCropBitmap = nullptr;//包含蒙版区域和裁剪区域的位图象素数据
 RECT cropRect;//裁剪盒区域
 
 ECaptureStatus currentStatus = ECaptureStatus::CS_NoCapture;//当前状态
 ESizeBoxLocation curSizeBoxLocation = SBL_None;//鼠标所在的裁剪盒的位置
-HCURSOR defaultCursor = NULL;
+HCURSOR defaultCursor = NULL;//默认光标
 POINT prevMousePos;//上一次鼠标位置
 
 //Toolbar按钮的位图文件，顺序是normal、hover、pressed
 const WCHAR* toolbarBmpFiles[] = {
 	L"Images/finish.bmp",L"Images/finish.bmp",L"Images/finish.bmp",
 	L"Images/cancel.bmp",L"Images/cancel.bmp",L"Images/cancel.bmp",
+	L"Images/line.bmp",L"Images/line.bmp",L"Images/line.bmp",
 	nullptr
 };
 ToolbarButton toolbarButtons[TBID_Max] = { 0 };//Toolbar按钮数组
 RECT toolbarRect = {0};//Toolbar区域
 HDC hTBCompatibleDC = NULL;//Toolbar按钮的内存DC
+std::vector<Graph> graphLines;//绘制的直线
+EGraphType currentDrawType = EGraphType::GL_None;//当前正在绘制图形的类型
 
 LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
-
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
 	_In_opt_ HINSTANCE hPrevInstance,
 	_In_ LPWSTR    lpCmdLine,
@@ -188,6 +207,7 @@ void Swap(T& elem1,T& elem2)
 	elem1 = elem2;
 	elem2 = tmp;
 }
+
 bool CaptureScreenBitmap(int x, int y, int width, int height, unsigned char* outData)
 {
 	//获取屏幕DC句柄以及创建兼容的内存DC
@@ -328,7 +348,7 @@ bool SaveBitmap(const unsigned char* data, int width, int height, DWORD size, co
 	return true;
 }
 
-void SaveCropRectImage()
+void SaveCropRectImage(HDC hdc)
 {
 	int left = min(cropRect.left, cropRect.right);
 	int right = max(cropRect.left, cropRect.right);
@@ -355,6 +375,39 @@ void SaveCropRectImage()
 				memcpy(&cropData[destIndex], &lpScreenBitmap[srcIndex], saveLineBytes);
 			}
 		}
+
+		HDC hScreenDC = ::GetDC(NULL);
+		HDC hMemDC = ::CreateCompatibleDC(hScreenDC);
+		HBITMAP hBmp = ::CreateCompatibleBitmap(hScreenDC, width, height);
+		::SelectObject(hMemDC, hBmp);
+		BITMAPINFO bi;
+		bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+		bi.bmiHeader.biWidth = width;
+		bi.bmiHeader.biHeight = height;
+		bi.bmiHeader.biPlanes = 1;
+		bi.bmiHeader.biBitCount = 24;
+		bi.bmiHeader.biCompression = BI_RGB;
+		bi.bmiHeader.biSizeImage = 0;
+		bi.bmiHeader.biXPelsPerMeter = 0;
+		bi.bmiHeader.biYPelsPerMeter = 0;
+		bi.bmiHeader.biClrUsed = 0;
+		bi.bmiHeader.biClrImportant = 0;
+		::SetDIBitsToDevice(hMemDC, 0, 0, width, height, 0, 0, 0, height,cropData,&bi, DIB_RGB_COLORS);
+		std::vector<Graph> graphs = graphLines;
+		for (auto& graph : graphs)
+		{
+			for (auto& point : graph.points)
+			{
+				point.x -= left;
+				point.y -= top;
+			}
+		}
+		DrawGraph(hMemDC,graphs);
+		::GetDIBits(hMemDC,hBmp,0,height,cropData,&bi, DIB_RGB_COLORS);
+		::DeleteDC(hMemDC);
+		::DeleteObject(hBmp);
+		::ReleaseDC(NULL,hScreenDC);
+
 		time_t seconds = time(0);
 		int s = seconds % 60;
 		int m = (seconds % 3600) / 60;
@@ -476,21 +529,7 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 	{
 		PAINTSTRUCT ps;
 		HDC hdc = BeginPaint(hWnd, &ps);
-		TileBitmapToWindow(hdc);
-		if (currentStatus == ECaptureStatus::CS_FinishDragCrop
-			|| currentStatus == ECaptureStatus::CS_FixCrop
-			|| currentStatus == ECaptureStatus::CS_FinishFixCrop)
-		{
-			DrawCropRectSizeBox(hdc,cropRect);
-		}
-		if (currentStatus > ECaptureStatus::CS_Normal)
-		{
-			DrawCropSizeText(hdc);
-		}
-		if (currentStatus > ECaptureStatus::CS_DragCrop)
-		{
-			DrawToolBar(hdc);
-		}
+		OnDraw(hWnd,hdc);
 		EndPaint(hWnd, &ps);
 		break;
 	}
@@ -537,6 +576,7 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 			::DeleteDC(hTBCompatibleDC);
 			hTBCompatibleDC = nullptr;
 		}
+		graphLines.clear();
 		//PostQuitMessage(0);
 		break;
 	}
@@ -544,6 +584,27 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 		return DefWindowProc(hWnd, message, wParam, lParam);
 	}
 	return 0;
+}
+
+void OnDraw(HWND hWnd, HDC hdc)
+{
+	TileBitmapToWindow(hdc);
+	if (currentStatus == ECaptureStatus::CS_FinishDragCrop
+		|| currentStatus == ECaptureStatus::CS_FixCrop
+		|| currentStatus == ECaptureStatus::CS_FinishFixCrop
+		|| currentStatus == ECaptureStatus::CS_DrawGraph)
+	{
+		DrawCropRectSizeBox(hdc, cropRect);
+	}
+	if (currentStatus > ECaptureStatus::CS_Normal)
+	{
+		DrawCropSizeText(hdc);
+	}
+	if (currentStatus > ECaptureStatus::CS_DragCrop)
+	{
+		DrawToolBar(hdc);
+	}
+	DrawGraph(hdc,graphLines);
 }
 
 void OnMouseMove(HWND hWnd, int x, int y)
@@ -765,6 +826,26 @@ void OnMouseMove(HWND hWnd, int x, int y)
 			::InvalidateRect(hWnd, nullptr, FALSE);
 		}
 	}
+	else if (currentStatus == ECaptureStatus::CS_DrawGraph)
+	{
+		if (currentDrawType == EGraphType::GT_Line)
+		{
+			if (graphLines.size() > 0)
+			{
+				Graph& last = graphLines.back();
+				if (!last.bFinished)
+				{
+					if (last.points.size() < 2)
+					{
+						last.points.push_back(POINT());
+					}
+					last.points[1].x = x;
+					last.points[1].y = y;
+					InvalidateRect(hWnd, NULL, FALSE);
+				}
+			}
+		}
+	}
 	prevMousePos.x = x;
 	prevMousePos.y = y;
 }
@@ -809,6 +890,33 @@ void OnLeftMouseButtonDown(HWND hWnd, int x, int y)
 					}
 					::InvalidateRect(hWnd, nullptr, FALSE);
 				}
+			}
+		}
+	}
+	else if (currentStatus == CS_DrawGraph)
+	{
+		if (currentDrawType == EGraphType::GT_Line)
+		{
+			if (graphLines.size() == 0 || graphLines.back().bFinished)
+			{
+				Graph g;
+				g.points.push_back({ x,y });
+				g.bFinished = false;
+				g.type = currentDrawType;
+				graphLines.push_back(g);
+			}
+			else
+			{
+				Graph& last = graphLines.back();
+				if (last.points.size() < 2)
+				{
+					last.points.push_back(POINT());
+				}
+				last.points[1].x = x;
+				last.points[1].y = y;
+				last.bFinished = true;
+				currentStatus = CS_FinishFixCrop;
+				InvalidateRect(hWnd, NULL, FALSE);
 			}
 		}
 	}
@@ -876,7 +984,9 @@ void OnToolbarCommand(HWND hWnd,int id)
 		{
 			ShowWindow(hWnd, SW_HIDE);
 		}
-		SaveCropRectImage();
+		HDC hdc = ::GetDC(hWnd);
+		SaveCropRectImage(hdc);
+		::ReleaseDC(hWnd,hdc);
 		::DestroyWindow(hWnd);
 		break;
 	}
@@ -884,6 +994,12 @@ void OnToolbarCommand(HWND hWnd,int id)
 	{
 		currentStatus = ECaptureStatus::CS_FinishCapture;
 		::DestroyWindow(hWnd);
+		break;
+	}
+	case TBID_DrawLine:
+	{
+		currentStatus = ECaptureStatus::CS_DrawGraph;
+		currentDrawType = EGraphType::GT_Line;
 		break;
 	}
 	case TBID_Max:
@@ -1151,4 +1267,24 @@ void DrawToolBar(HDC hdc)
 	}
 	toolbarRect.right = x;
 	toolbarRect.bottom = toolbarRect.top + 32;
+}
+void DrawGraph(HDC hdc,const std::vector<Graph>& graphs)
+{
+	HPEN hPen = CreatePen(PS_SOLID,1,RGB(255,0,0));
+	HPEN hOldPen = (HPEN)::SelectObject(hdc,hPen);
+	for (int i = 0; i < graphs.size(); i++)
+	{
+		auto& graph = graphs[i];
+		if (graph.type == EGraphType::GT_Line)
+		{
+			if (graph.points.size() >= 2)
+			{
+				const POINT& pt1 = graph.points[0];
+				MoveToEx(hdc, pt1.x, pt1.y, NULL);
+				const POINT& pt2 = graph.points[1];
+				LineTo(hdc, pt2.x, pt2.y);
+			}
+		}
+	}
+	::SelectObject(hdc,hOldPen);
 }
