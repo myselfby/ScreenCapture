@@ -47,6 +47,8 @@ enum EToolbarButtonId
 	TBID_Finish,
 	TBID_Cancel,
 	TBID_DrawLine,
+	TBID_DrawEllipse,
+	TBID_DrawRectangle,
 	TBID_Max
 };
 enum EGraphType
@@ -54,6 +56,7 @@ enum EGraphType
 	GL_None,
 	GT_Line,
 	GT_Ellipse,
+	GT_Rectangle,
 	GT_Max
 };
 //工具条按钮结构
@@ -115,12 +118,14 @@ const WCHAR* toolbarBmpFiles[] = {
 	L"Images/finish.bmp",L"Images/finish.bmp",L"Images/finish.bmp",
 	L"Images/cancel.bmp",L"Images/cancel.bmp",L"Images/cancel.bmp",
 	L"Images/line.bmp",L"Images/line.bmp",L"Images/line.bmp",
+	L"Images/ellipse.bmp",L"Images/ellipse.bmp",L"Images/ellipse.bmp",
+	L"Images/rectangle.bmp",L"Images/rectangle.bmp",L"Images/rectangle.bmp",
 	nullptr
 };
 ToolbarButton toolbarButtons[TBID_Max] = { 0 };//Toolbar按钮数组
 RECT toolbarRect = {0};//Toolbar区域
 HDC hTBCompatibleDC = NULL;//Toolbar按钮的内存DC
-std::vector<Graph> graphLines;//绘制的直线
+std::vector<Graph> allGraphs;//绘制的图形
 EGraphType currentDrawType = EGraphType::GL_None;//当前正在绘制图形的类型
 
 LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -393,7 +398,7 @@ void SaveCropRectImage(HDC hdc)
 		bi.bmiHeader.biClrUsed = 0;
 		bi.bmiHeader.biClrImportant = 0;
 		::SetDIBitsToDevice(hMemDC, 0, 0, width, height, 0, 0, 0, height,cropData,&bi, DIB_RGB_COLORS);
-		std::vector<Graph> graphs = graphLines;
+		std::vector<Graph> graphs = allGraphs;
 		for (auto& graph : graphs)
 		{
 			for (auto& point : graph.points)
@@ -576,7 +581,7 @@ LRESULT CALLBACK CropScreenProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM l
 			::DeleteDC(hTBCompatibleDC);
 			hTBCompatibleDC = nullptr;
 		}
-		graphLines.clear();
+		allGraphs.clear();
 		//PostQuitMessage(0);
 		break;
 	}
@@ -604,7 +609,7 @@ void OnDraw(HWND hWnd, HDC hdc)
 	{
 		DrawToolBar(hdc);
 	}
-	DrawGraph(hdc,graphLines);
+	DrawGraph(hdc,allGraphs);
 }
 
 void OnMouseMove(HWND hWnd, int x, int y)
@@ -828,21 +833,18 @@ void OnMouseMove(HWND hWnd, int x, int y)
 	}
 	else if (currentStatus == ECaptureStatus::CS_DrawGraph)
 	{
-		if (currentDrawType == EGraphType::GT_Line)
+		if (allGraphs.size() > 0)
 		{
-			if (graphLines.size() > 0)
+			Graph& last = allGraphs.back();
+			if (!last.bFinished)
 			{
-				Graph& last = graphLines.back();
-				if (!last.bFinished)
+				if (last.points.size() < 2)
 				{
-					if (last.points.size() < 2)
-					{
-						last.points.push_back(POINT());
-					}
-					last.points[1].x = x;
-					last.points[1].y = y;
-					InvalidateRect(hWnd, NULL, FALSE);
+					last.points.push_back(POINT());
 				}
+				last.points.back().x = x;
+				last.points.back().y = y;
+				InvalidateRect(hWnd, NULL, FALSE);
 			}
 		}
 	}
@@ -895,29 +897,29 @@ void OnLeftMouseButtonDown(HWND hWnd, int x, int y)
 	}
 	else if (currentStatus == CS_DrawGraph)
 	{
-		if (currentDrawType == EGraphType::GT_Line)
+		if (allGraphs.size() == 0 || allGraphs.back().bFinished)
 		{
-			if (graphLines.size() == 0 || graphLines.back().bFinished)
+			Graph g;
+			g.points.push_back({ x,y });
+			g.bFinished = false;
+			g.type = currentDrawType;
+			allGraphs.push_back(g);
+		}
+		else
+		{
+			Graph& last = allGraphs.back();
+			if (last.points.size() < 2)
 			{
-				Graph g;
-				g.points.push_back({ x,y });
-				g.bFinished = false;
-				g.type = currentDrawType;
-				graphLines.push_back(g);
+				last.points.push_back(POINT());
 			}
-			else
-			{
-				Graph& last = graphLines.back();
-				if (last.points.size() < 2)
-				{
-					last.points.push_back(POINT());
-				}
-				last.points[1].x = x;
-				last.points[1].y = y;
+			last.points.back().x = x;
+			last.points.back().y = y;
+			//if (currentDrawType > EGraphType::GL_None && currentDrawType <= EGraphType::GT_Rectangle)
+			{//暂不考虑多边形
 				last.bFinished = true;
 				currentStatus = CS_FinishFixCrop;
-				InvalidateRect(hWnd, NULL, FALSE);
 			}
+			InvalidateRect(hWnd, NULL, FALSE);
 		}
 	}
 	prevMousePos.x = x;
@@ -1000,6 +1002,18 @@ void OnToolbarCommand(HWND hWnd,int id)
 	{
 		currentStatus = ECaptureStatus::CS_DrawGraph;
 		currentDrawType = EGraphType::GT_Line;
+		break;
+	}
+	case TBID_DrawEllipse:
+	{
+		currentStatus = ECaptureStatus::CS_DrawGraph;
+		currentDrawType = EGraphType::GT_Ellipse;
+		break;
+	}
+	case TBID_DrawRectangle:
+	{
+		currentStatus = ECaptureStatus::CS_DrawGraph;
+		currentDrawType = EGraphType::GT_Rectangle;
 		break;
 	}
 	case TBID_Max:
@@ -1272,6 +1286,9 @@ void DrawGraph(HDC hdc,const std::vector<Graph>& graphs)
 {
 	HPEN hPen = CreatePen(PS_SOLID,1,RGB(255,0,0));
 	HPEN hOldPen = (HPEN)::SelectObject(hdc,hPen);
+
+	HBRUSH hBrush = (HBRUSH)GetStockObject(NULL_BRUSH);
+	HBRUSH hOldBrush = (HBRUSH)::SelectObject(hdc, hBrush);
 	for (int i = 0; i < graphs.size(); i++)
 	{
 		auto& graph = graphs[i];
@@ -1285,6 +1302,27 @@ void DrawGraph(HDC hdc,const std::vector<Graph>& graphs)
 				LineTo(hdc, pt2.x, pt2.y);
 			}
 		}
+		else if (graph.type == EGraphType::GT_Ellipse)
+		{
+			if (graph.points.size() >= 2)
+			{
+				const POINT& pt1 = graph.points[0];
+				const POINT& pt2 = graph.points[1];
+				::Ellipse(hdc,pt1.x,pt1.y,pt2.x,pt2.y);
+			}
+		}
+		else if (graph.type == EGraphType::GT_Rectangle)
+		{
+			if (graph.points.size() >= 2)
+			{
+				const POINT& pt1 = graph.points[0];
+				const POINT& pt2 = graph.points[1];
+				::Rectangle(hdc,pt1.x,pt1.y,pt2.x,pt2.y);
+			}
+		}
 	}
 	::SelectObject(hdc,hOldPen);
+	::SelectObject(hdc,hOldBrush);
+	DeleteObject(hPen);
+	DeleteObject(hBrush);
 }
